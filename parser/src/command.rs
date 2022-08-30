@@ -12,6 +12,7 @@ pub mod prioritize;
 pub mod relabel;
 pub mod second;
 pub mod shortcut;
+pub mod decision;
 
 pub fn find_command_start(input: &str, bot: &str) -> Option<usize> {
     input.to_ascii_lowercase().find(&format!("@{}", bot))
@@ -29,6 +30,7 @@ pub enum Command<'a> {
     Shortcut(Result<shortcut::ShortcutCommand, Error<'a>>),
     Close(Result<close::CloseCommand, Error<'a>>),
     Note(Result<note::NoteCommand, Error<'a>>),
+    Decision(Result<decision::DecisionCommand, Error<'a>>),
 }
 
 #[derive(Debug)]
@@ -199,6 +201,7 @@ impl<'a> Command<'a> {
             Command::Shortcut(r) => r.is_ok(),
             Command::Close(r) => r.is_ok(),
             Command::Note(r) => r.is_ok(),
+            Command::DecisionProcess(r) => r.is_ok(),
         }
     }
 
