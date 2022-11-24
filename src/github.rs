@@ -402,7 +402,7 @@ impl fmt::Display for IssueRepository {
 }
 
 impl IssueRepository {
-    fn url(&self) -> String {
+    pub fn url(&self) -> String {
         format!(
             "https://api.github.com/repos/{}/{}",
             self.organization, self.repository
@@ -776,6 +776,24 @@ impl Issue {
             )
             .await
             .context("failed to close issue")?;
+        Ok(())
+    }
+
+    pub async fn merge(&self, client: &GithubClient) -> anyhow::Result<()> {
+        let merge_url = format!("{}/pulls/{}/merge", self.repository().url(), self.number);
+
+        #[derive(serde::Serialize)]
+        struct MergeIssue<'a> {
+            commit_title: &'a str,
+        }
+
+        client
+            ._send_req(client.put(&merge_url).json(&MergeIssue {
+                commit_title: "Merged by the bot!",
+            }))
+            .await
+            .context("failed to merge issue")?;
+
         Ok(())
     }
 
@@ -1501,7 +1519,7 @@ impl GithubClient {
         response.text().await.context("raw gist from url")
     }
 
-    fn get(&self, url: &str) -> RequestBuilder {
+    pub fn get(&self, url: &str) -> RequestBuilder {
         log::trace!("get {:?}", url);
         self.client.get(url).configure(self)
     }
