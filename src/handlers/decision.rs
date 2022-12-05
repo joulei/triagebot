@@ -27,7 +27,7 @@ pub const DECISION_PROCESS_JOB_NAME: &str = "decision_process_action";
 #[derive(Serialize, Deserialize)]
 pub struct DecisionProcessActionMetadata {
     pub message: String,
-    pub get_url: String,
+    pub get_issue_url: String,
     pub status: Resolution,
 }
 
@@ -120,7 +120,7 @@ pub(super) async fn handle_command(
 
                     let metadata = serde_json::value::to_value(DecisionProcessActionMetadata {
                         message: "some message".to_string(),
-                        get_url: format!("{}/issues/{}", issue.repository().url(), issue.number),
+                        get_issue_url: format!("{}/issues/{}", issue.repository().url(), issue.number),
                         status: Merge,
                     })
                     .unwrap();

@@ -41,11 +41,11 @@ async fn decision_process_handler(metadata: &serde_json::Value) -> anyhow::Resul
         Merge => {
             let gh_client = GithubClient::new_with_default_token(Client::new().clone());
 
-            let request = gh_client.get(&metadata.get_url);
+            let request = gh_client.get(&metadata.get_issue_url);
 
             match gh_client.json::<Issue>(request).await {
                 Ok(issue) => issue.merge(&gh_client).await?,
-                Err(e) => log::error!("Failed to get issue {}, error: {}", metadata.get_url, e),
+                Err(e) => log::error!("Failed to get issue {}, error: {}", metadata.get_issue_url, e),
             }
         }
         _ => {}
