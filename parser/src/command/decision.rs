@@ -29,43 +29,29 @@ impl DecisionCommand {
 
         match toks.peek_token()? {
             Some(Token::Word("merge")) => {
-                toks.next_token()?;
-
-                if is_token_eol(toks.peek_token()?) {
-                    toks.next_token()?;
-                    *input = toks;
-                    return Ok(Some(Self {
-                        resolution: Resolution::Merge,
-                        reversibility: Reversibility::Reversible,
-                    }));
-                } else {
-                    return Err(toks.error(ParseError::ExpectedEnd));
-                }
+                command_or_error(input, &mut toks, Self {
+                    resolution: Resolution::Merge,
+                    reversibility: Reversibility::Reversible,
+                })
             }
             Some(Token::Word("hold")) => {
-                toks.next_token()?;
-
-                if is_token_eol(toks.peek_token()?) {
-                    toks.next_token()?;
-                    *input = toks;
-                    return Ok(Some(Self {
-                        resolution: Resolution::Hold,
-                        reversibility: Reversibility::Reversible,
-                    }));
-                } else {
-                    return Err(toks.error(ParseError::ExpectedEnd));
-                }
+                command_or_error(input, &mut toks, Self {
+                    resolution: Resolution::Hold,
+                    reversibility: Reversibility::Reversible,
+                })
             }
             _ => Ok(None),
         }
     }
 }
 
-fn is_token_eol<'a>(token: Option<Token>) -> bool {
-    if let Some(Token::Dot) | Some(Token::EndOfLine) = token {
-        true
+fn command_or_error<'a>(input: &mut Tokenizer<'a>, toks: &mut Tokenizer<'a>, command: DecisionCommand) -> Result<Option<DecisionCommand>, Error<'a>> {
+    toks.next_token()?;
+    if let Some(Token::Dot) | Some(Token::EndOfLine) = toks.peek_token()? {
+        *input = toks.clone();
+        Ok(Some(command))
     } else {
-        false
+        Err(toks.error(ParseError::ExpectedEnd))
     }
 }
 
