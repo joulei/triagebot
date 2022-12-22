@@ -1,4 +1,5 @@
 use crate::db::jobs::*;
+use crate::github;
 use crate::{
     config::DecisionConfig, db::issue_decision_state::*, github::Event, handlers::Context,
     interactions::ErrorComment,
@@ -93,16 +94,26 @@ pub(super) async fn handle_command(
                     let end_date: DateTime<Utc> =
                         start_date.checked_add_signed(Duration::days(10)).unwrap();
 
-                    let mut current: BTreeMap<String, UserStatus> = BTreeMap::new();
+                    //TODO: change this to be configurable in toml / ask user to provide the team name
+                    // it should match the same team that we check for above when determining if the user is a member
+                    let team = github::get_team(&ctx.github, &"T-lang").await?.unwrap();
+
+                    let mut current: BTreeMap<String, Option<UserStatus>> = BTreeMap::new();
+
+                    for member in team.members {
+                        current.insert(member.name, None);
+                    }
+
                     current.insert(
-                        "mcass19".to_string(),
-                        UserStatus {
+                        user.login.clone(),
+                        Some(UserStatus {
                             comment_id: "comment_id".to_string(),
                             text: "something".to_string(),
                             reversibility: Reversibility::Reversible,
                             resolution: Merge,
-                        },
+                        }),
                     );
+
                     let history: BTreeMap<String, Vec<UserStatus>> = BTreeMap::new();
 
                     insert_issue_decision_state(
@@ -120,7 +131,11 @@ pub(super) async fn handle_command(
 
                     let metadata = serde_json::value::to_value(DecisionProcessActionMetadata {
                         message: "some message".to_string(),
-                        get_issue_url: format!("{}/issues/{}", issue.repository().url(), issue.number),
+                        get_issue_url: format!(
+                            "{}/issues/{}",
+                            issue.repository().url(),
+                            issue.number
+                        ),
                         status: Merge,
                     })
                     .unwrap();
@@ -133,12 +148,7 @@ pub(super) async fn handle_command(
                     )
                     .await?;
 
-                    // let team = github::get_team(&ctx.github, &"T-lang"); // change this to be configurable in toml?
-
-                    let comment = format!(
-                        "Wow, it looks like you want to merge this, {}.\n| Team member | State |\n|-------------|-------|\n| julmontesdeoca | merge |\n| mcass19 |  |",
-                        user.login
-                    );
+                    let comment = build_status_comment(&history, &current);
 
                     issue
                         .post_comment(&ctx.github, &comment)
@@ -149,6 +159,118 @@ pub(super) async fn handle_command(
                 }
             }
         }
+    }
+}
+
+fn build_status_comment(
+    history: &BTreeMap<String, Vec<UserStatus>>,
+    current: &BTreeMap<String, Option<UserStatus>>,
+) -> String {
+    let mut comment = "| Team member | State |\n|-------------|-------|".to_owned();
+    for (user, statuses) in history {
+        let mut user_statuses = format!("\n| {} |", user);
+
+        // previous stasuses
+        for status in statuses {
+            let status_item = format!(" ~~{}~~ ", resolution_to_str(&status.resolution));
+            user_statuses.push_str(&status_item);
+        }
+
+        // current status
+        let current_status = current.get(user).unwrap(); //todo match on option
+        let mut user_resolution;
+        match current_status {
+            Some(status) => user_resolution = resolution_to_str(&status.resolution),
+            _ => user_resolution = "".to_string(),
+        }
+        let status_item = format!(" **{}** |", user_resolution);
+        user_statuses.push_str(&status_item);
+
+        comment.push_str(&user_statuses);
+    }
+
+    println!("{}", comment);
+    comment
+}
+
+fn resolution_to_str(resolution: &Resolution) -> String {
+    match resolution {
+        Merge => "merge".to_owned(),
+        Hold => "hold".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_status_comment() {
+        let mut history: BTreeMap<String, Vec<UserStatus>> = BTreeMap::new();
+        let mut current_statuses: BTreeMap<String, Option<UserStatus>> = BTreeMap::new();
+
+        // user 1
+        let mut user_1_statuses: Vec<UserStatus> = Vec::new();
+
+        user_1_statuses.push(UserStatus {
+            comment_id: "some-id".to_string(),
+            text: "I like this".to_string(),
+            reversibility: Reversibility::Reversible,
+            resolution: Resolution::Merge,
+        });
+
+        user_1_statuses.push(UserStatus {
+            comment_id: "some-id".to_string(),
+            text: "I like this".to_string(),
+            reversibility: Reversibility::Reversible,
+            resolution: Resolution::Hold,
+        });
+
+        history.insert("Niklaus".to_string(), user_1_statuses);
+
+        current_statuses.insert(
+            "Niklaus".to_string(),
+            Some(UserStatus {
+                comment_id: "some-id".to_string(),
+                text: "I like this".to_string(),
+                reversibility: Reversibility::Reversible,
+                resolution: Resolution::Merge,
+            }),
+        );
+
+        // user 2
+        let mut user_2_statuses: Vec<UserStatus> = Vec::new();
+
+        user_2_statuses.push(UserStatus {
+            comment_id: "some-id".to_string(),
+            text: "I like this".to_string(),
+            reversibility: Reversibility::Reversible,
+            resolution: Resolution::Hold,
+        });
+
+        user_2_statuses.push(UserStatus {
+            comment_id: "some-id".to_string(),
+            text: "I like this".to_string(),
+            reversibility: Reversibility::Reversible,
+            resolution: Resolution::Merge,
+        });
+
+        history.insert("Barbara".to_string(), user_2_statuses);
+
+        current_statuses.insert(
+            "Barbara".to_string(),
+            Some(UserStatus {
+                comment_id: "some-id".to_string(),
+                text: "I like this".to_string(),
+                reversibility: Reversibility::Reversible,
+                resolution: Resolution::Merge,
+            }),
+        );
+
+        assert_eq!(
+            build_status_comment(&history, &current_statuses),
+            "| Team member | State |\n|-------------|-------|\n| Barbara | ~~hold~~  ~~merge~~  **merge** |\n| Niklaus | ~~merge~~  ~~hold~~  **merge** |"    
+        )
     }
 }
 
