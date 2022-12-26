@@ -148,7 +148,7 @@ pub(super) async fn handle_command(
                     )
                     .await?;
 
-                    let comment = build_status_comment(&history, &current);
+                    let comment = build_status_comment(&history, &current)?;
 
                     issue
                         .post_comment(&ctx.github, &comment)
@@ -165,7 +165,7 @@ pub(super) async fn handle_command(
 fn build_status_comment(
     history: &BTreeMap<String, Vec<UserStatus>>,
     current: &BTreeMap<String, Option<UserStatus>>,
-) -> String {
+) -> anyhow::Result<String> {
     let mut comment = "| Team member | State |\n|-------------|-------|".to_owned();
     for (user, statuses) in history {
         let mut user_statuses = format!("\n| {} |", user);
@@ -177,8 +177,8 @@ fn build_status_comment(
         }
 
         // current status
-        let current_status = current.get(user).unwrap(); //todo match on option
-        let mut user_resolution;
+        let current_status = current.get(user).unwrap();
+        let user_resolution;
         match current_status {
             Some(status) => user_resolution = resolution_to_str(&status.resolution),
             _ => user_resolution = "".to_string(),
@@ -190,7 +190,7 @@ fn build_status_comment(
     }
 
     println!("{}", comment);
-    comment
+    Ok(comment)
 }
 
 fn resolution_to_str(resolution: &Resolution) -> String {
@@ -267,10 +267,11 @@ mod tests {
             }),
         );
 
-        assert_eq!(
-            build_status_comment(&history, &current_statuses),
-            "| Team member | State |\n|-------------|-------|\n| Barbara | ~~hold~~  ~~merge~~  **merge** |\n| Niklaus | ~~merge~~  ~~hold~~  **merge** |"    
-        )
+        let build_result = build_status_comment(&history, &current_statuses)
+            .expect("it shouldn't fail building the message");
+        let expected_comment = "| Team member | State |\n|-------------|-------|\n| Barbara | ~~hold~~  ~~merge~~  **merge** |\n| Niklaus | ~~merge~~  ~~hold~~  **merge** |".to_string();
+
+        assert_eq!(build_result, expected_comment);
     }
 }
 
