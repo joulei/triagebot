@@ -4,12 +4,14 @@ use crate::{
     config::DecisionConfig, db::issue_decision_state::*, github::Event, handlers::Context,
     interactions::ErrorComment,
 };
+use anyhow::bail;
 use anyhow::Context as Ctx;
 use chrono::{DateTime, Duration, Utc};
 use parser::command::decision::Resolution::{Hold, Merge};
 use parser::command::decision::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+//use factori::{factori, create};
 
 // get state for issue_id from db
     // if no state (first call)
@@ -172,106 +174,151 @@ fn build_status_comment(
 
         // previous stasuses
         for status in statuses {
-            let status_item = format!(" ~~{}~~ ", resolution_to_str(&status.resolution));
+            let status_item = format!(" ~~{}~~ ", status.resolution.to_string());
             user_statuses.push_str(&status_item);
         }
 
         // current status
-        let current_status = current.get(user).unwrap();
-        let user_resolution;
-        match current_status {
-            Some(status) => user_resolution = resolution_to_str(&status.resolution),
-            _ => user_resolution = "".to_string(),
-        }
-        let status_item = format!(" **{}** |", user_resolution);
+        let user_resolution = match current.get(user) {
+            Some(current_status) => {
+                if let Some(status) = current_status {
+                    format!("**{}**", status.resolution.to_string())
+                } else {
+                    "".to_string()
+                }
+            }
+            None => bail!("user {} not present in current statuses list", user),
+        };
+
+        let status_item = format!(" {} |", user_resolution);
         user_statuses.push_str(&status_item);
 
         comment.push_str(&user_statuses);
     }
 
-    println!("{}", comment);
     Ok(comment)
-}
-
-fn resolution_to_str(resolution: &Resolution) -> String {
-    match resolution {
-        Merge => "merge".to_owned(),
-        Hold => "hold".to_owned(),
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use factori::{create, factori};
+
+    factori!(UserStatus, {
+        default {
+            comment_id = "the-comment-id".to_string(),
+            text = "this is my argument for making this decision".to_string(),
+            reversibility = Reversibility::Reversible,
+            resolution = Resolution::Merge
+        }
+
+        mixin hold {
+            resolution = Resolution::Hold
+        }
+    });
 
     #[test]
-    fn test_build_status_comment() {
+    fn test_successfuly_build_comment() {
         let mut history: BTreeMap<String, Vec<UserStatus>> = BTreeMap::new();
         let mut current_statuses: BTreeMap<String, Option<UserStatus>> = BTreeMap::new();
 
         // user 1
         let mut user_1_statuses: Vec<UserStatus> = Vec::new();
-
-        user_1_statuses.push(UserStatus {
-            comment_id: "some-id".to_string(),
-            text: "I like this".to_string(),
-            reversibility: Reversibility::Reversible,
-            resolution: Resolution::Merge,
-        });
-
-        user_1_statuses.push(UserStatus {
-            comment_id: "some-id".to_string(),
-            text: "I like this".to_string(),
-            reversibility: Reversibility::Reversible,
-            resolution: Resolution::Hold,
-        });
+        user_1_statuses.push(create!(UserStatus));
+        user_1_statuses.push(create!(UserStatus, :hold));
 
         history.insert("Niklaus".to_string(), user_1_statuses);
 
-        current_statuses.insert(
-            "Niklaus".to_string(),
-            Some(UserStatus {
-                comment_id: "some-id".to_string(),
-                text: "I like this".to_string(),
-                reversibility: Reversibility::Reversible,
-                resolution: Resolution::Merge,
-            }),
-        );
+        current_statuses.insert("Niklaus".to_string(), Some(create!(UserStatus)));
 
         // user 2
         let mut user_2_statuses: Vec<UserStatus> = Vec::new();
-
-        user_2_statuses.push(UserStatus {
-            comment_id: "some-id".to_string(),
-            text: "I like this".to_string(),
-            reversibility: Reversibility::Reversible,
-            resolution: Resolution::Hold,
-        });
-
-        user_2_statuses.push(UserStatus {
-            comment_id: "some-id".to_string(),
-            text: "I like this".to_string(),
-            reversibility: Reversibility::Reversible,
-            resolution: Resolution::Merge,
-        });
+        user_2_statuses.push(create!(UserStatus, :hold));
+        user_2_statuses.push(create!(UserStatus));
 
         history.insert("Barbara".to_string(), user_2_statuses);
 
-        current_statuses.insert(
-            "Barbara".to_string(),
-            Some(UserStatus {
-                comment_id: "some-id".to_string(),
-                text: "I like this".to_string(),
-                reversibility: Reversibility::Reversible,
-                resolution: Resolution::Merge,
-            }),
-        );
+        current_statuses.insert("Barbara".to_string(), Some(create!(UserStatus)));
 
         let build_result = build_status_comment(&history, &current_statuses)
             .expect("it shouldn't fail building the message");
-        let expected_comment = "| Team member | State |\n|-------------|-------|\n| Barbara | ~~hold~~  ~~merge~~  **merge** |\n| Niklaus | ~~merge~~  ~~hold~~  **merge** |".to_string();
+        let expected_comment = "| Team member | State |\n\
+        |-------------|-------|\n\
+        | Barbara | ~~hold~~  ~~merge~~  **merge** |\n\
+        | Niklaus | ~~merge~~  ~~hold~~  **merge** |"
+            .to_string();
 
         assert_eq!(build_result, expected_comment);
+    }
+
+    #[test]
+    fn test_successfuly_build_comment_user_no_votes() {
+        let mut history: BTreeMap<String, Vec<UserStatus>> = BTreeMap::new();
+        let mut current_statuses: BTreeMap<String, Option<UserStatus>> = BTreeMap::new();
+
+        // user 1
+        let mut user_1_statuses: Vec<UserStatus> = Vec::new();
+        user_1_statuses.push(create!(UserStatus));
+        user_1_statuses.push(create!(UserStatus, :hold));
+
+        history.insert("Niklaus".to_string(), user_1_statuses);
+
+        current_statuses.insert("Niklaus".to_string(), Some(create!(UserStatus)));
+
+        // user 2
+        let mut user_2_statuses: Vec<UserStatus> = Vec::new();
+        user_2_statuses.push(create!(UserStatus, :hold));
+        user_2_statuses.push(create!(UserStatus));
+
+        history.insert("Barbara".to_string(), user_2_statuses);
+
+        current_statuses.insert("Barbara".to_string(), Some(create!(UserStatus)));
+
+        // user 3
+        history.insert("Tom".to_string(), Vec::new());
+
+        current_statuses.insert("Tom".to_string(), None);
+
+        let build_result = build_status_comment(&history, &current_statuses)
+            .expect("it shouldn't fail building the message");
+        let expected_comment = "| Team member | State |\n\
+        |-------------|-------|\n\
+        | Barbara | ~~hold~~  ~~merge~~  **merge** |\n\
+        | Niklaus | ~~merge~~  ~~hold~~  **merge** |\n\
+        | Tom |  |"
+            .to_string();
+
+        assert_eq!(build_result, expected_comment);
+    }
+
+    #[test]
+    fn test_build_comment_inconsistent_users() {
+        let mut history: BTreeMap<String, Vec<UserStatus>> = BTreeMap::new();
+        let mut current_statuses: BTreeMap<String, Option<UserStatus>> = BTreeMap::new();
+
+        // user 1
+        let mut user_1_statuses: Vec<UserStatus> = Vec::new();
+        user_1_statuses.push(create!(UserStatus));
+        user_1_statuses.push(create!(UserStatus, :hold));
+
+        history.insert("Niklaus".to_string(), user_1_statuses);
+
+        current_statuses.insert("Niklaus".to_string(), Some(create!(UserStatus)));
+
+        // user 2
+        let mut user_2_statuses: Vec<UserStatus> = Vec::new();
+        user_2_statuses.push(create!(UserStatus, :hold));
+        user_2_statuses.push(create!(UserStatus));
+
+        history.insert("Barbara".to_string(), user_2_statuses);
+
+        current_statuses.insert("Martin".to_string(), Some(create!(UserStatus)));
+
+        let build_result = build_status_comment(&history, &current_statuses);
+        assert_eq!(
+            format!("{}", build_result.unwrap_err()),
+            "user Barbara not present in current statuses list"
+        );
     }
 }
 
