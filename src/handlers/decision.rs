@@ -11,7 +11,6 @@ use parser::command::decision::Resolution::{Hold, Merge};
 use parser::command::decision::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-//use factori::{factori, create};
 
 // get state for issue_id from db
     // if no state (first call)
@@ -174,7 +173,7 @@ fn build_status_comment(
 
         // previous stasuses
         for status in statuses {
-            let status_item = format!(" ~~{}~~ ", status.resolution.to_string());
+            let status_item = format!(" ~~{}~~ ", status.resolution);
             user_statuses.push_str(&status_item);
         }
 
@@ -182,7 +181,7 @@ fn build_status_comment(
         let user_resolution = match current.get(user) {
             Some(current_status) => {
                 if let Some(status) = current_status {
-                    format!("**{}**", status.resolution.to_string())
+                    format!("**{}**", status.resolution)
                 } else {
                     "".to_string()
                 }
