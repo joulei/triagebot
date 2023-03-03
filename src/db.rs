@@ -9,6 +9,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_postgres::Client as DbClient;
 
 pub mod issue_data;
+pub mod issue_decision_state;
 pub mod jobs;
 pub mod notifications;
 pub mod rustc_commits;
@@ -273,4 +274,20 @@ CREATE UNIQUE INDEX jobs_name_scheduled_at_unique_index
         name, scheduled_at
     );
 ",
+    "
+CREATE TYPE reversibility AS ENUM ('reversible', 'irreversible');
+",
+    "
+CREATE TYPE resolution AS ENUM ('hold', 'merge');
+",
+    "CREATE TABLE issue_decision_state (
+    issue_id BIGINT PRIMARY KEY,
+    initiator TEXT NOT NULL,
+    start_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    current JSONB NOT NULL,
+    history JSONB,
+    reversibility reversibility NOT NULL DEFAULT 'reversible',
+    resolution resolution NOT NULL DEFAULT 'merge'
+);",
 ];
